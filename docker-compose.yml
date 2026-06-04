@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: jablog-postgres
+    environment:
+      POSTGRES_DB: jablog
+      POSTGRES_USER: jablog_user
+      POSTGRES_PASSWORD: jablog_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jablog_user -d jablog"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jablog-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: jablog-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jablog-network
+
+  # Spring Boot Application (optional - for running in container)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jablog-app
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/jablog
+      DATABASE_USER: jablog_user
+      DATABASE_PASSWORD: jablog_pass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_THIS_SECRET_IN_PRODUCTION_USE_STRONG_RANDOM_STRING_AT_LEAST_256_BITS}
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: prod
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - jablog-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  jablog-network:
+    driver: bridge
